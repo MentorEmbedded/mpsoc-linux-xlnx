@@ -151,6 +151,7 @@ struct xtpg_device {
 	struct v4l2_ctrl *hblank;
 	struct v4l2_ctrl *vblank;
 	struct v4l2_ctrl *pattern;
+	struct v4l2_ctrl *ppc1;
 	bool streaming;
 	bool is_hls;
 
@@ -188,21 +189,20 @@ static u32 xtpg_get_bayer_phase(unsigned int code)
 
 static void xtpg_config_vtc(struct xtpg_device *xtpg, int width, int height)
 {
-
+	s32 ppc1 = v4l2_ctrl_g_ctrl(xtpg->ppc1);
 	struct xvtc_config config = {
-		.hblank_start = width / xtpg->ppc,
-		.hsync_start = width / xtpg->ppc + 1,
-		.vblank_start = height,
-		.vsync_start = height + 1,
-		.fps = xtpg->fi_d / xtpg->fi_n,
+		.hblank_start = width / ppc1,
+		.hsync_start = width / ppc1 + 1,
+		.vblank_start = height / ppc1,
+		.vsync_start = height / ppc1 + 1,
 	};
 	unsigned int htotal;
 	unsigned int vtotal;
 
 	htotal = min_t(unsigned int, XVTC_MAX_HSIZE,
-		       (v4l2_ctrl_g_ctrl(xtpg->hblank) + width) / xtpg->ppc);
+		       v4l2_ctrl_g_ctrl(xtpg->hblank) / ppc1 + width / ppc1);
 	vtotal = min_t(unsigned int, XVTC_MAX_VSIZE,
-		       v4l2_ctrl_g_ctrl(xtpg->vblank) + height);
+		      v4l2_ctrl_g_ctrl(xtpg->vblank) / ppc1 + height / ppc1);
 
 	config.hsync_end = htotal - 1;
 	config.hsize = htotal;
@@ -758,6 +758,16 @@ static const struct v4l2_ctrl_config xtpg_hls_fg_ctrl = {
 	.qmenu	= xtpg_hls_fg_strings,
 };
 
+static const struct v4l2_ctrl_config xtpg_ppc_ctrl = {
+	.ops    = &xtpg_ctrl_ops,
+	.id     = V4L2_CID_XILINX_PPC,
+	.name   = "Pixels per clock",
+	.type   = V4L2_CTRL_TYPE_INTEGER,
+	.min    = 1,
+	.max    = 2,
+	.step   = 1,
+	.def    = 1,
+};
 static struct v4l2_ctrl_config xtpg_common_ctrls[] = {
 	{
 		.ops    = &xtpg_ctrl_ops,
@@ -1181,6 +1191,9 @@ static int xtpg_probe(struct platform_device *pdev)
 	xtpg->hblank = v4l2_ctrl_new_std(&xtpg->ctrl_handler, &xtpg_ctrl_ops,
 					 V4L2_CID_HBLANK, XTPG_MIN_HBLANK,
 					 XTPG_MAX_HBLANK, 1, 100);
+
+	xtpg->ppc1 = v4l2_ctrl_new_custom(&xtpg->ctrl_handler, &xtpg_ppc_ctrl,
+					 NULL);
 
 	if (xtpg->is_hls) {
 		xtpg->pattern =
